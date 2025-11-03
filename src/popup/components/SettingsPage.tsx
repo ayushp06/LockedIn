@@ -113,6 +113,8 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
     try {
       await UserService.updateUser(auth.currentUser.uid, { dailyGoal: newGoal });
       setDailyGoal(newGoal);
+      // Cache the goal for instant display on next popup open
+      await chrome.storage.local.set({ cachedDailyGoal: newGoal });
       alert(`Daily goal updated to ${newGoal} hours!`);
     } catch (error) {
       console.error('Error updating daily goal:', error);
@@ -523,7 +525,7 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
             <div className="grid grid-cols-2 gap-3">
               {[
                 { label: 'Today', value: `${(workData.dailyWorkTime / (1000 * 60 * 60)).toFixed(1)}h`, color: 'purple', icon: '📅' },
-                { label: 'Current Session', value: `${(workData.workTime / (1000 * 60 * 60)).toFixed(1)}h`, color: 'blue', icon: '⭐' },
+                { label: 'Total Work Time', value: `${(workData.workTime / (1000 * 60 * 60)).toFixed(1)}h`, color: 'blue', icon: '⭐' },
                 { label: 'Status', value: workData.isWorking ? 'Working' : 'Idle', color: workData.isWorking ? 'green' : 'yellow', icon: workData.isWorking ? '🔥' : '😴' },
                 { label: 'Friends', value: friends.length.toString(), color: 'yellow', icon: '👥' }
               ].map((stat, index) => (

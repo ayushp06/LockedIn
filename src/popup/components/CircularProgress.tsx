@@ -1,3 +1,5 @@
+import { useState, useEffect, useRef } from 'react';
+
 interface CircularProgressProps {
   percentage: number;
   size?: number;
@@ -9,9 +11,27 @@ export function CircularProgress({
   size = 160, 
   strokeWidth = 8 
 }: CircularProgressProps) {
+  const [displayPercentage, setDisplayPercentage] = useState(0);
+  const hasAnimatedRef = useRef(false);
+  
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
-  const offset = circumference - (percentage / 100) * circumference;
+  const offset = circumference - (displayPercentage / 100) * circumference;
+  
+  // Animate from 0 to target percentage only on first mount
+  useEffect(() => {
+    if (!hasAnimatedRef.current) {
+      hasAnimatedRef.current = true;
+      // Delay to ensure smooth animation
+      const timer = setTimeout(() => {
+        setDisplayPercentage(percentage);
+      }, 100);
+      return () => clearTimeout(timer);
+    } else {
+      // Direct update after first animation
+      setDisplayPercentage(percentage);
+    }
+  }, [percentage]);
 
   return (
     <div className="relative inline-flex items-center justify-center p-12 overflow-visible">

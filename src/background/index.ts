@@ -100,21 +100,25 @@ class WorkTracker {
 
     // Listen for idle state changes (detects sleep mode and user inactivity)
     chrome.idle.onStateChanged.addListener((state) => {
-      console.log('Idle state changed:', state);
+      console.log('🔔 Idle state changed:', state);
       if (state === 'active') {
+        console.log('✅ System/user became active');
         this.isUserActive = true;
         this.isSystemActive = true;
         this.lastActivityTime = Date.now();
         // Resume tracking if we're on a work site
         this.checkCurrentTab();
       } else if (state === 'locked') {
-        // Only pause for locked state (system sleep), not idle
+        // System is locked/sleeping - STOP tracking
+        console.log('🔒 System locked/sleeping - pausing tracking');
         this.isSystemActive = false;
         this.pauseTracking();
       } else if (state === 'idle') {
-        // Don't pause for idle - just mark as inactive but keep tracking
+        // User is idle but system is not locked
+        // STOP tracking when idle (not just mark inactive)
+        console.log('😴 User idle for 60+ seconds - pausing tracking');
         this.isUserActive = false;
-        console.log('User marked as idle but continuing to track');
+        this.pauseTracking();
       }
     });
 
@@ -173,7 +177,7 @@ class WorkTracker {
 
   private pauseTracking() {
     if (this.data.isWorking) {
-      console.log('Pausing tracking due to inactivity/sleep');
+      console.log('⏸️ Pausing tracking due to inactivity/sleep');
       this.stopWork();
     }
   }
@@ -182,7 +186,7 @@ class WorkTracker {
     this.data.isWorking = true;
     this.data.startTime = Date.now();
     this.updateBadge('ON');
-    console.log('Started working');
+    console.log('▶️ Started working at', new Date().toLocaleTimeString());
   }
 
   private stopWork() {
@@ -195,7 +199,9 @@ class WorkTracker {
       this.saveData();
       // Sync to Firebase if user is logged in
       this.syncToFirebase();
-      console.log('Stopped working. Duration:', workDuration);
+      console.log('⏹️ Stopped working. Added', 
+        Math.round(workDuration / 1000), 'seconds. Daily total:', 
+        Math.round(this.data.dailyWorkTime / 1000 / 60), 'minutes');
     }
   }
 
@@ -219,10 +225,27 @@ class WorkTracker {
       
       // If more than 10 seconds have passed, system was likely suspended
       if (timeSinceLastCheck > 10000) {
-        console.log('System suspend detected (time gap:', timeSinceLastCheck, 'ms)');
-        this.isSystemActive = false;
-        this.pauseTracking();
-        // Mark system as active again now that we've resumed
+        console.log('⚠️ System suspend/sleep detected! Time gap:', 
+          Math.round(timeSinceLastCheck / 1000), 'seconds');
+        
+        // If we were tracking, stop and save time BEFORE sleep
+        if (this.data.isWorking) {
+          // Calculate work duration up to the LAST check (before sleep)
+          // Don't include the sleep time!
+          const workBeforeSleep = this.lastActivityTime - this.data.startTime;
+          if (workBeforeSleep > 0) {
+            this.data.currentWorkTime += workBeforeSleep;
+            this.data.dailyWorkTime += workBeforeSleep;
+            console.log('✅ Saved', Math.round(workBeforeSleep / 1000), 
+              'seconds of work before sleep');
+          }
+          this.data.isWorking = false;
+          this.updateBadge('OFF');
+          this.saveData();
+          this.syncToFirebase();
+        }
+        
+        // Mark system as active again and check if we should resume
         this.isSystemActive = true;
         this.checkCurrentTab();
       }

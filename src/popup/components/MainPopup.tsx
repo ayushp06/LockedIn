@@ -37,14 +37,34 @@ export function MainPopup({ onNavigate }: MainPopupProps) {
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [userStreak, setUserStreak] = useState<number>(0);
   const [dailyGoal, setDailyGoal] = useState<number>(3);
+  const [goalLoaded, setGoalLoaded] = useState(false);
 
   const currentTime = new Date().toLocaleTimeString('en-US', { 
     hour: '2-digit', 
     minute: '2-digit' 
   });
 
+  // Load cached daily goal FIRST for instant display (prevents 3h flash)
+  useEffect(() => {
+    const loadCachedGoal = async () => {
+      try {
+        const result = await chrome.storage.local.get(['cachedDailyGoal']);
+        if (result.cachedDailyGoal !== undefined) {
+          setDailyGoal(result.cachedDailyGoal);
+          console.log('📦 Loaded cached goal:', result.cachedDailyGoal);
+        }
+        setGoalLoaded(true);
+      } catch (error) {
+        console.error('Error loading cached goal:', error);
+        setGoalLoaded(true);
+      }
+    };
+    loadCachedGoal();
+  }, []);
+
   // Convert milliseconds to hours
-  const workHours = todayStats ? todayStats.totalWorkTime / (1000 * 60 * 60) : workData.dailyWorkTime / (1000 * 60 * 60);
+  // Always use real-time workData from background script, not stale todayStats from Firebase
+  const workHours = workData.dailyWorkTime / (1000 * 60 * 60);
   const targetHours = dailyGoal;
   const percentage = Math.min((workHours / targetHours) * 100, 100);
 
@@ -80,12 +100,18 @@ export function MainPopup({ onNavigate }: MainPopupProps) {
           console.error('Error loading today stats:', error);
         }
 
-        // Load user streak and daily goal
+        // Load user streak and daily goal from Firebase
         try {
           const userData = await UserService.getUserWithStreak(user.uid);
           if (userData) {
             setUserStreak(userData.streak);
-            setDailyGoal(userData.dailyGoal);
+            // Only update goal if it's different from cached value
+            if (userData.dailyGoal !== dailyGoal) {
+              setDailyGoal(userData.dailyGoal);
+            }
+            // Always update cache to ensure it's in sync
+            await chrome.storage.local.set({ cachedDailyGoal: userData.dailyGoal });
+            console.log('✅ Daily goal from Firebase:', userData.dailyGoal);
           }
         } catch (error) {
           console.error('Error loading user streak:', error);
@@ -110,7 +136,11 @@ export function MainPopup({ onNavigate }: MainPopupProps) {
           const userData = await UserService.getUserWithStreak(user.uid);
           if (userData) {
             setUserStreak(userData.streak);
-            setDailyGoal(userData.dailyGoal);
+            if (userData.dailyGoal !== dailyGoal) {
+              setDailyGoal(userData.dailyGoal);
+              // Cache it
+              await chrome.storage.local.set({ cachedDailyGoal: userData.dailyGoal });
+            }
           }
           
           // Leaderboard will auto-update via the real-time subscription
@@ -301,7 +331,7 @@ export function MainPopup({ onNavigate }: MainPopupProps) {
 
       <div className="flex-1 overflow-y-auto overflow-x-visible p-4 space-y-6 relative z-10">
         {/* Daily Work Counter */}
-        <div className="relative bg-gradient-to-br from-[#2d2d2d] via-[#2d2d2d] to-[#252525] rounded-xl p-6 border border-white/5 shadow-2xl overflow-visible">
+        <div className="relative bg-gradient-to-br from-[#2d2d2d] via-[#2d2d2d] to-[#252525] rounded-xl p-6 border border-white/5 shadow-2xl overflow-hidden">
           {/* Background glow */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl" />
           
