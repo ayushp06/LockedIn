@@ -81,8 +81,10 @@ class WorkTracker {
     // Listen for window focus changes
     chrome.windows.onFocusChanged.addListener(async (windowId) => {
       if (windowId === chrome.windows.WINDOW_ID_NONE) {
-        // Chrome lost focus
-        this.pauseTracking();
+        // Chrome lost focus - but DON'T pause tracking
+        // The user might just be looking at the popup
+        // Only pause if the user is actually idle (handled by idle listener)
+        console.log('Chrome lost focus, but continuing to track');
       } else {
         // Chrome gained focus - check if we're on a work site
         try {
@@ -240,6 +242,9 @@ class WorkTracker {
         this.saveData();
         // Sync to Firebase if user is logged in
         this.syncToFirebase();
+        // Log to confirm tracking is active
+        console.log('⏱️ Tracking active - Daily time:', 
+          Math.round(this.data.dailyWorkTime / 1000 / 60), 'minutes');
       } else if (this.data.isWorking && !this.isSystemActive) {
         // Stop tracking only if system becomes inactive (sleep/lock)
         this.pauseTracking();

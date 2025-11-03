@@ -147,8 +147,8 @@ export function MainPopup({ onNavigate }: MainPopupProps) {
 
     fetchWorkData();
     
-    // Update every 2 seconds for more responsive UI
-    const interval = setInterval(fetchWorkData, 2000);
+    // Update every 1 second for real-time tracking display
+    const interval = setInterval(fetchWorkData, 1000);
     return () => clearInterval(interval);
   }, []);
 
