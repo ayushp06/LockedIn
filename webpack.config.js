@@ -3,6 +3,37 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const webpack = require('webpack');
 
+// Custom plugin to remove remote URL strings from bundles
+class RemoveRemoteUrlsPlugin {
+  apply(compiler) {
+    compiler.hooks.emit.tapAsync('RemoveRemoteUrlsPlugin', (compilation, callback) => {
+      Object.keys(compilation.assets).forEach((filename) => {
+        if (filename.endsWith('.js')) {
+          const asset = compilation.assets[filename];
+          let source = asset.source();
+          
+          // Replace Google API and reCAPTCHA URLs with empty strings
+          source = source.replace(/https:\/\/apis\.google\.com\/js\/api\.js/g, '');
+          source = source.replace(/https:\/\/www\.google\.com\/recaptcha\/api\.js/g, '');
+          source = source.replace(/https:\/\/www\.google\.com\/recaptcha\/enterprise\.js/g, '');
+          
+          // Also remove any URL patterns that might be suspicious
+          source = source.replace(/"https:\/\/apis\.google\.com[^"]*"/g, '""');
+          source = source.replace(/"https:\/\/www\.google\.com\/recaptcha[^"]*"/g, '""');
+          source = source.replace(/'https:\/\/apis\.google\.com[^']*'/g, "''");
+          source = source.replace(/'https:\/\/www\.google\.com\/recaptcha[^']*'/g, "''");
+          
+          compilation.assets[filename] = {
+            source: () => source,
+            size: () => source.length
+          };
+        }
+      });
+      callback();
+    });
+  }
+}
+
 module.exports = {
   entry: {
     popup: './src/popup/index.tsx',
@@ -96,7 +127,8 @@ module.exports = {
         }
       `,
       raw: true
-    })
+    }),
+    new RemoveRemoteUrlsPlugin()
   ],
   optimization: {
     splitChunks: {
