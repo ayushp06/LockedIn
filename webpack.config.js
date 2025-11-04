@@ -3,14 +3,27 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const webpack = require('webpack');
 
-// Custom plugin to remove remote URL strings from bundles
-class RemoveRemoteUrlsPlugin {
+// Custom plugin to remove remote URLs and eval-like code (new Function)
+class RemoveRemoteUrlsAndEvalPlugin {
   apply(compiler) {
-    compiler.hooks.emit.tapAsync('RemoveRemoteUrlsPlugin', (compilation, callback) => {
+    compiler.hooks.emit.tapAsync('RemoveRemoteUrlsAndEvalPlugin', (compilation, callback) => {
       Object.keys(compilation.assets).forEach((filename) => {
         if (filename.endsWith('.js')) {
           const asset = compilation.assets[filename];
           let source = asset.source();
+          
+          // CRITICAL: Remove new Function() - Chrome Web Store violation
+          // Replace webpack's globalThis polyfill that uses new Function
+          source = source.replace(
+            /return this\|\|new Function\("return this"\)\(\)/g,
+            'return(typeof globalThis!=="undefined"?globalThis:typeof self!=="undefined"?self:typeof window!=="undefined"?window:this)'
+          );
+          
+          // Also handle other variations
+          source = source.replace(
+            /new Function\("return this"\)/g,
+            '(function(){return globalThis||self||window||this})'
+          );
           
           // Replace Google API and reCAPTCHA URLs with empty strings
           source = source.replace(/https:\/\/apis\.google\.com\/js\/api\.js/g, '');
@@ -43,8 +56,14 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: '[name].js',
-    clean: true
+    clean: true,
+    // Prevent globalThis polyfill that uses new Function
+    environment: {
+      dynamicImport: false,
+      module: false
+    }
   },
+  target: ['web', 'es2020'], // Prevent new Function polyfills
   module: {
     rules: [
       {
@@ -69,8 +88,14 @@ module.exports = {
       '@/components': path.resolve(__dirname, 'src/components'),
       '@/lib': path.resolve(__dirname, 'src/lib'),
       '@/types': path.resolve(__dirname, 'src/types')
+    },
+    fallback: {
+      'global': false,
+      'process': false
     }
   },
+  // Disable Node.js polyfills that use new Function
+  node: false,
   plugins: [
     new HtmlWebpackPlugin({
       template: './src/popup/popup.html',
@@ -128,7 +153,7 @@ module.exports = {
       `,
       raw: true
     }),
-    new RemoveRemoteUrlsPlugin()
+    new RemoveRemoteUrlsAndEvalPlugin()
   ],
   optimization: {
     splitChunks: {

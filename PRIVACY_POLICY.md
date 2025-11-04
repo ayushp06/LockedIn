@@ -24,6 +24,10 @@ LockedIn ("we", "our", or "us") is committed to protecting your privacy. This Pr
 - **Friend Connections**: Email addresses of users you add as friends
 - **Leaderboard Data**: Your productivity stats shared with friends
 
+### 4. Data Access Disclosure
+- LockedIn reads the URLs of websites you explicitly add to your work sites list in order to measure active time spent on those pages.
+- No page content, keystrokes, or other personal data are read, stored, or transmitted.
+
 ## How We Use Your Information
 
 We use the collected information to:
@@ -90,8 +94,8 @@ We may update this Privacy Policy periodically. Changes will be posted here with
 ## Contact Us
 
 If you have questions about this Privacy Policy or your data:
-- **Email**: [YOUR_EMAIL@example.com]
-- **GitHub**: [YOUR_GITHUB_PROFILE]
+- **Email**: [apandejee006@yahoo.com]
+- **GitHub**: [github.com/ayushp06]
 
 ## Permissions Justification
 
@@ -102,7 +106,7 @@ If you have questions about this Privacy Policy or your data:
 - **activeTab**: To identify the current website for tracking
 - **identity**: For Google OAuth authentication
 - **idle**: To detect when you're away from your computer
-- **host_permissions (https://*/*)**: To track work time on any website you designate
+- **optional_host_permissions (*://*/*)**: LockedIn only requests access to websites after you explicitly add them to your “work sites” list. The extension does not access or collect data from any other sites by default.
 
 ## Data Security
 
