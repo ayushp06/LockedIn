@@ -201,7 +201,7 @@ class WorkTracker {
       } else if (state === 'idle') {
         // User is idle but system is not locked
         // STOP tracking when idle (not just mark inactive)
-        console.log('😴 User idle for 60+ seconds - pausing tracking');
+        console.log('😴 User idle for 30+ minutes - pausing tracking');
         this.isUserActive = false;
         this.pauseTracking();
       }
@@ -217,8 +217,8 @@ class WorkTracker {
     chrome.runtime.onInstalled.addListener(async (details) => {
       console.log('LockedIn extension installed/updated:', details.reason);
       this.setupBadge();
-      // Set idle detection to 60 seconds (1 minute of inactivity)
-      chrome.idle.setDetectionInterval(60);
+      // Set idle detection to 30 minutes (1800 seconds of inactivity)
+      chrome.idle.setDetectionInterval(1800);
       
       // Re-register content scripts for tracked sites that already have permissions
       await this.registerContentScriptsForTrackedSites();
@@ -369,8 +369,8 @@ class WorkTracker {
       }
     }, 30000); // 30 seconds
 
-    // Set idle detection interval (60 seconds of inactivity)
-    chrome.idle.setDetectionInterval(60);
+    // Set idle detection interval (30 minutes / 1800 seconds of inactivity)
+    chrome.idle.setDetectionInterval(1800);
   }
 
   private resetDailyIfNeeded() {

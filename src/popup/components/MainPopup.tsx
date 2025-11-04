@@ -157,6 +157,8 @@ export function MainPopup({ onNavigate }: MainPopupProps) {
 
   // Fetch work data from background script
   useEffect(() => {
+    let syncCounter = 0;
+    
     const fetchWorkData = async () => {
       try {
         const response = await chrome.runtime.sendMessage({ action: 'getWorkTime' });
@@ -166,6 +168,14 @@ export function MainPopup({ onNavigate }: MainPopupProps) {
             dailyWorkTime: response.dailyWorkTime || 0,
             isWorking: response.isWorking || false
           });
+          
+          // Force sync to Firebase every 5 seconds when popup is open (for real-time leaderboard)
+          syncCounter++;
+          if (syncCounter >= 5 && user) { // Every 5 seconds (5 * 1s intervals)
+            syncCounter = 0;
+            // Trigger immediate Firebase sync
+            chrome.runtime.sendMessage({ action: 'syncToFirebase' }).catch(() => {});
+          }
         }
       } catch (error) {
         // Only log error if it's not a connection issue
@@ -180,7 +190,7 @@ export function MainPopup({ onNavigate }: MainPopupProps) {
     // Update every 1 second for real-time tracking display
     const interval = setInterval(fetchWorkData, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [user]);
 
   // Subscribe to real-time leaderboard updates
   useEffect(() => {
