@@ -25,7 +25,6 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
   const [dailyGoal, setDailyGoal] = useState<number>(3);
   const [isSavingGoal, setIsSavingGoal] = useState(false);
 
-
   // Load friends data
   useEffect(() => {
     const loadFriends = async () => {
@@ -55,6 +54,9 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
         const response = await chrome.runtime.sendMessage({ action: 'getWorkSites' });
         if (response && response.workSites) {
           setWorkSites(response.workSites);
+          
+          // Check if we need to request permissions for default sites
+          await requestPermissionsForDefaultSites(response.workSites);
         }
       } catch (error) {
         console.error('Failed to load work sites:', error);
@@ -63,6 +65,51 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
 
     loadWorkSites();
   }, []);
+
+  // Request permissions for default sites that don't have them yet
+  const requestPermissionsForDefaultSites = async (sites: string[]) => {
+    try {
+      // Check if this is first time (no permissions granted yet)
+      const hasChecked = await chrome.storage.local.get(['permissionsChecked']);
+      if (hasChecked.permissionsChecked) {
+        return; // Already checked before
+      }
+
+      // Request permissions for each default site
+      for (const site of sites) {
+        const httpsPattern = `https://*.${site}/*`;
+        const httpPattern = `http://*.${site}/*`;
+        
+        const hasPermission = await chrome.permissions.contains({
+          origins: [httpsPattern, httpPattern]
+        });
+
+        if (!hasPermission) {
+          // Request permission
+          const granted = await chrome.permissions.request({
+            origins: [httpsPattern, httpPattern]
+          });
+
+          if (granted) {
+            console.log('✅ Permission granted for:', site);
+            // Register content script
+            await chrome.runtime.sendMessage({ 
+              action: 'addWorkSite', 
+              site: site,
+              permissionGranted: true
+            });
+          } else {
+            console.log('⚠️ Permission denied for:', site);
+          }
+        }
+      }
+
+      // Mark as checked
+      await chrome.storage.local.set({ permissionsChecked: true });
+    } catch (error) {
+      console.error('Error requesting default permissions:', error);
+    }
+  };
 
   // Load work data
   useEffect(() => {
@@ -125,19 +172,81 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
   };
 
   const addSite = async () => {
-    if (newSite.trim()) {
-      try {
-        const response = await chrome.runtime.sendMessage({ 
-          action: 'addWorkSite', 
-          site: newSite.trim() 
-        });
-        if (response && response.success) {
-          setWorkSites([...workSites, newSite.trim()]);
-          setNewSite('');
-        }
-      } catch (error) {
-        console.error('Failed to add work site:', error);
+    if (!newSite.trim()) {
+      alert('❌ Please enter a site to track (e.g., github.com)');
+      return;
+    }
+
+    let site = newSite.trim();
+    
+    // Extract domain from full URL if user pasted a URL
+    try {
+      // Remove protocol if present (https://, http://)
+      site = site.replace(/^https?:\/\//, '');
+      
+      // Remove path and query string (everything after /)
+      site = site.split('/')[0];
+      
+      // Remove port if present (e.g., :8080)
+      site = site.split(':')[0];
+      
+      // Remove www. prefix if present
+      site = site.replace(/^www\./, '');
+      
+      // Validate it's a valid domain
+      if (!site || site.length === 0) {
+        alert('❌ Invalid site format. Please enter a domain like "github.com"');
+        return;
       }
+      
+      console.log('Cleaned site domain:', site);
+    } catch (error) {
+      alert('❌ Invalid site format. Please enter a domain like "github.com"');
+      return;
+    }
+    
+    // Use both http and https patterns explicitly
+    const httpsPattern = `https://*.${site}/*`;
+    const httpPattern = `http://*.${site}/*`;
+    
+    try {
+      console.log('Requesting permissions for:', site);
+      console.log('Patterns:', httpsPattern, httpPattern);
+      
+      // Request permission in popup (requires user interaction)
+      const granted = await chrome.permissions.request({
+        origins: [httpsPattern, httpPattern]
+      });
+
+      console.log('Permission granted:', granted);
+
+      if (!granted) {
+        alert('❌ Permission denied. Please allow access to track this site.');
+        return;
+      }
+
+      // Permission granted, now add the site and register content script
+      console.log('Sending addWorkSite message...');
+      const response = await chrome.runtime.sendMessage({ 
+        action: 'addWorkSite', 
+        site: site,
+        permissionGranted: true
+      });
+      
+      console.log('Background response:', response);
+      
+      if (response && response.success) {
+        setWorkSites([...workSites, site]);
+        setNewSite('');
+        alert(`✅ Added ${site} to tracked sites!`);
+      } else if (response && response.error) {
+        alert(`❌ Error: ${response.error}`);
+      } else {
+        alert('❌ Unexpected response from background script');
+      }
+    } catch (error: any) {
+      console.error('Failed to add work site:', error);
+      alert(`❌ Failed to add site: ${error.message || 'Unknown error'}`);
     }
   };
 

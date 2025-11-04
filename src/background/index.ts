@@ -33,9 +33,94 @@ class WorkTracker {
 
   private async initialize() {
     await this.loadData();
+    await this.registerContentScriptsForTrackedSites();
     this.setupEventListeners();
     this.startTracking();
     this.resetDailyIfNeeded();
+  }
+
+  // Dynamically register content scripts for tracked sites
+  private async registerContentScriptsForTrackedSites() {
+    try {
+      // Get existing registered scripts
+      const existingScripts = await chrome.scripting.getRegisteredContentScripts();
+      const existingIds = new Set(existingScripts.map(s => s.id));
+
+      // Register content script for each tracked site
+      for (const site of this.data.workSites) {
+        const scriptId = `lockedin-${site.replace(/\./g, '-')}`;
+        
+        // Skip if already registered
+        if (existingIds.has(scriptId)) {
+          console.log('✅ Content script already registered for:', site);
+          continue;
+        }
+
+        const httpsPattern = `https://*.${site}/*`;
+        const httpPattern = `http://*.${site}/*`;
+        
+        // Request permission for this site
+        const hasPermission = await chrome.permissions.contains({
+          origins: [httpsPattern, httpPattern]
+        });
+
+        if (!hasPermission) {
+          console.log('📋 Permission needed for:', site);
+          // Permission requests need user interaction, handled in addWorkSite
+          continue;
+        }
+
+        // Register content script
+        await chrome.scripting.registerContentScripts([{
+          id: scriptId,
+          js: ['content.js'],
+          matches: [httpsPattern, httpPattern],
+          runAt: 'document_end'
+        }]);
+
+        console.log('✅ Registered content script for:', site);
+      }
+    } catch (error) {
+      console.error('Error registering content scripts:', error);
+    }
+  }
+
+  // Register content script for a single site (permission already granted from popup)
+  private async registerContentScriptForSite(site: string): Promise<void> {
+    const scriptId = `lockedin-${site.replace(/\./g, '-')}`;
+    const httpsPattern = `https://*.${site}/*`;
+    const httpPattern = `http://*.${site}/*`;
+
+    try {
+      // Check if already registered
+      const existingScripts = await chrome.scripting.getRegisteredContentScripts();
+      if (existingScripts.some(s => s.id === scriptId)) {
+        console.log('✅ Content script already registered for:', site);
+        return;
+      }
+
+      // Verify permission exists (should already be granted from popup)
+      const hasPermission = await chrome.permissions.contains({
+        origins: [httpsPattern, httpPattern]
+      });
+
+      if (!hasPermission) {
+        throw new Error('Permission not granted for this site');
+      }
+
+      // Register content script for both http and https
+      await chrome.scripting.registerContentScripts([{
+        id: scriptId,
+        js: ['content.js'],
+        matches: [httpsPattern, httpPattern],
+        runAt: 'document_end'
+      }]);
+
+      console.log('✅ Registered content script for:', site);
+    } catch (error) {
+      console.error('Failed to register content script for', site, error);
+      throw error;
+    }
   }
 
   private async loadData() {
@@ -129,11 +214,14 @@ class WorkTracker {
     });
 
     // Listen for extension installation
-    chrome.runtime.onInstalled.addListener(() => {
-      console.log('LockedIn extension installed');
+    chrome.runtime.onInstalled.addListener(async (details) => {
+      console.log('LockedIn extension installed/updated:', details.reason);
       this.setupBadge();
       // Set idle detection to 60 seconds (1 minute of inactivity)
       chrome.idle.setDetectionInterval(60);
+      
+      // Re-register content scripts for tracked sites that already have permissions
+      await this.registerContentScriptsForTrackedSites();
     });
 
     // Detect system suspend/resume by checking for large time gaps
@@ -375,18 +463,42 @@ class WorkTracker {
         
         case 'addWorkSite':
           if (request.site && !this.data.workSites.includes(request.site)) {
-            this.data.workSites.push(request.site);
-            await this.saveData();
-            sendResponse({ success: true });
+            try {
+              // Add the site
+              this.data.workSites.push(request.site);
+              await this.saveData();
+              
+              // Register content script for this site
+              await this.registerContentScriptForSite(request.site);
+              
+              sendResponse({ success: true });
+            } catch (error) {
+              console.error('Error adding work site:', error);
+              // Remove the site if registration failed
+              this.data.workSites = this.data.workSites.filter(s => s !== request.site);
+              await this.saveData();
+              sendResponse({ success: false, error: 'Failed to register permissions' });
+            }
           } else {
             sendResponse({ success: false, error: 'Site already exists or invalid' });
           }
           break;
         
         case 'removeWorkSite':
-          this.data.workSites = this.data.workSites.filter(site => site !== request.site);
-          await this.saveData();
-          sendResponse({ success: true });
+          try {
+            this.data.workSites = this.data.workSites.filter(site => site !== request.site);
+            await this.saveData();
+            
+            // Unregister content script for this site
+            const scriptId = `lockedin-${request.site.replace(/\./g, '-')}`;
+            await chrome.scripting.unregisterContentScripts({ ids: [scriptId] });
+            console.log('🗑️ Unregistered content script for:', request.site);
+            
+            sendResponse({ success: true });
+          } catch (error) {
+            console.error('Error removing work site:', error);
+            sendResponse({ success: false, error: 'Failed to unregister' });
+          }
           break;
         
         case 'getStatus':
