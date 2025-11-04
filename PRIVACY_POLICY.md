@@ -1,6 +1,6 @@
 # Privacy Policy for LockedIn
 
-**Last Updated:** October 18, 2025
+**Last Updated:** November 4, 2025
 
 ## Overview
 LockedIn ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information when you use our Chrome extension.
@@ -27,6 +27,13 @@ LockedIn ("we", "our", or "us") is committed to protecting your privacy. This Pr
 ### 4. Data Access Disclosure
 - LockedIn reads the URLs of websites you explicitly add to your work sites list in order to measure active time spent on those pages.
 - No page content, keystrokes, or other personal data are read, stored, or transmitted.
+
+### 5. Content Script Injection Policy
+- **LockedIn does NOT inject content scripts on all websites**
+- Content scripts are ONLY injected on websites that YOU explicitly add to your "work sites" list
+- When you add a new work site, the extension requests permission for that specific domain
+- You can remove sites at any time, which also removes the content script and revokes permissions
+- Content scripts only track page visibility (whether the tab is active) - no page content is accessed
 
 ## How We Use Your Information
 
@@ -56,17 +63,48 @@ We **ONLY** share:
 - Your productivity stats with friends you've explicitly added
 - Aggregated, anonymized data for leaderboards (only with your friends)
 
+## Google Sign-In and OAuth Scopes
+
+### Why We Request Google Sign-In:
+LockedIn uses Google Sign-In to provide you with a seamless authentication experience and to sync your productivity data across devices. We request the following OAuth scopes:
+
+- **`userinfo.email`**: To uniquely identify your account and enable friend connections via email
+- **`userinfo.profile`**: To display your name and profile picture in the extension and on leaderboards
+- **`openid`**: For secure authentication with Google's OAuth 2.0 system
+
+**Your Google credentials are never stored or accessed by us.** Authentication is handled entirely by Google's secure OAuth system. We only receive a secure token to verify your identity.
+
 ## Third-Party Services
 
 We use the following third-party services:
-- **Google OAuth** - For authentication
-- **Firebase Authentication** - For user management  
-- **Firebase Firestore** - For data storage
-- **Google Cloud Platform** - For hosting services
+- **Google OAuth** - For secure authentication and user identity verification
+- **Firebase Authentication** - For user management and session handling
+- **Firebase Firestore** - For cloud database storage (see "What Data is Stored in Firebase" below)
+- **Google Cloud Platform** - For hosting Firebase services
 
 These services have their own privacy policies:
 - [Google Privacy Policy](https://policies.google.com/privacy)
 - [Firebase Privacy Policy](https://firebase.google.com/support/privacy)
+
+## What Data is Stored in Firebase
+
+Firebase (Google Cloud Firestore) is used to store and sync your productivity data. Specifically, we store:
+
+### In Firebase Firestore:
+- **User Profile**: Email, display name, profile picture URL, user ID, daily goal settings
+- **Daily Statistics**: Date, total work time, goal achievement status, streak count
+- **Work Sessions**: Timestamps and duration of work sessions (no URLs or page content)
+- **Social Data**: Friend connections (user IDs only), leaderboard rankings
+- **Achievement Data**: Milestones, badges, and productivity metrics
+
+### What is NOT Stored:
+- ❌ Browsing history or URLs visited
+- ❌ Page content, text, or HTML
+- ❌ Keystrokes or input data
+- ❌ Cookies or tracking data
+- ❌ Any data from sites not on your work sites list
+
+**Firebase Security**: All data is encrypted in transit (HTTPS) and at rest. We implement Firebase Security Rules to ensure only you can access your own data (except leaderboard data shared with friends).
 
 ## Your Rights
 
@@ -101,12 +139,18 @@ If you have questions about this Privacy Policy or your data:
 
 ### Why We Need Each Permission:
 
-- **tabs**: To detect which websites you're actively using for work time tracking
-- **storage**: To save your settings and work sites list locally
-- **activeTab**: To identify the current website for tracking
-- **identity**: For Google OAuth authentication
-- **idle**: To detect when you're away from your computer
-- **optional_host_permissions (*://*/*)**: LockedIn only requests access to websites after you explicitly add them to your “work sites” list. The extension does not access or collect data from any other sites by default.
+- **tabs**: To detect which websites you're actively using for work time tracking (URL detection only, no content access)
+- **storage**: To save your settings and work sites list locally on your device
+- **activeTab**: To identify the current website for tracking purposes
+- **identity**: For secure Google OAuth authentication (sign-in only)
+- **idle**: To detect when you're away from your computer and pause time tracking (prevents counting away time)
+- **scripting**: To dynamically inject content scripts ONLY on sites you add to your work list (not used until you add a site)
+- **optional_host_permissions (https://*/*, http://*/*)**: 
+  - These permissions are OPTIONAL and NOT automatically granted
+  - When you add a website to your work sites list, the extension requests permission for ONLY that specific domain
+  - The extension will prompt you to allow access each time you add a new site
+  - You maintain full control - permissions are never granted without your explicit approval
+  - Removing a site from your list also revokes its permissions and removes the content script
 
 ## Data Security
 
