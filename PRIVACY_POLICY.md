@@ -117,6 +117,10 @@ We implement security measures including:
 - Regular security audits
 - No storage of sensitive credentials
 
+## Transparency
+- LockedIn does not collect browsing history, cookies, or any content from the pages you visit.  
+- The extension only records time spent on user-designated domains for productivity tracking purposes.
+
 ## Your Consent
 
 By using LockedIn, you consent to this Privacy Policy and agree to its terms.
