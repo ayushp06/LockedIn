@@ -205,6 +205,17 @@ temp/
 .rollup.cache/
 
 # ============================================
+# Internal Documentation & Build Files
+# ============================================
+# Build scripts
+prepare-webstore.bat
+
+# Internal reports and documentation
+PERFORMANCE_OPTIMIZATION.md
+CHROME_WEBSTORE_SUBMISSION_CHECKLIST.md
+VIOLATION_FIX_REPORT.md
+
+# ============================================
 # Misc
 # ============================================
 *.orig
