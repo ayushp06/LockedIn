@@ -7,6 +7,7 @@ interface WorkTrackerData {
   isWorking: boolean;
   startTime: number;
   dailyWorkTime: number;
+  totalWorkTime: number; // Cumulative work time across all days
   lastResetDate: string;
   currentSessionId?: string;
   currentWebsite?: string;
@@ -20,6 +21,7 @@ class WorkTracker {
     isWorking: false,
     startTime: 0,
     dailyWorkTime: 0,
+    totalWorkTime: 0, // Total cumulative work time
     lastResetDate: new Date().toDateString()
   };
 
@@ -312,6 +314,7 @@ class WorkTracker {
       const workDuration = Date.now() - this.data.startTime;
       this.data.currentWorkTime += workDuration;
       this.data.dailyWorkTime += workDuration;
+      this.data.totalWorkTime += workDuration; // Add to total cumulative time
       this.data.isWorking = false;
       this.updateBadge('OFF');
       
@@ -372,6 +375,7 @@ class WorkTracker {
           if (workBeforeSleep > 0) {
             this.data.currentWorkTime += workBeforeSleep;
             this.data.dailyWorkTime += workBeforeSleep;
+            this.data.totalWorkTime += workBeforeSleep; // Add to total cumulative time
             console.log('✅ Saved', Math.round(workBeforeSleep / 1000), 
               'seconds of work before sleep');
           }
@@ -414,13 +418,15 @@ class WorkTracker {
         const workDuration = Date.now() - this.data.startTime;
         this.data.currentWorkTime += workDuration;
         this.data.dailyWorkTime += workDuration;
+        this.data.totalWorkTime += workDuration; // Add to total cumulative time
         this.data.startTime = Date.now();
         this.saveData();
         // Sync to Firebase if user is logged in
         this.syncToFirebase();
         // Log to confirm tracking is active
         console.log('⏱️ Tracking active - Daily time:', 
-          Math.round(this.data.dailyWorkTime / 1000 / 60), 'minutes');
+          Math.round(this.data.dailyWorkTime / 1000 / 60), 'minutes',
+          'Total time:', Math.round(this.data.totalWorkTime / 1000 / 60), 'minutes');
       } else if (this.data.isWorking && !this.isSystemActive) {
         // Stop tracking only if system becomes inactive (sleep/lock)
         this.pauseTracking();
@@ -516,7 +522,7 @@ class WorkTracker {
         
         case 'getWorkTime':
           sendResponse({ 
-            workTime: this.data.currentWorkTime,
+            workTime: this.data.totalWorkTime, // Return cumulative total, not current session
             dailyWorkTime: this.data.dailyWorkTime,
             isWorking: this.data.isWorking
           });
