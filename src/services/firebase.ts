@@ -116,6 +116,33 @@ export class WorkSessionService {
 
       // Update user's total work time
       await this.updateUserWorkTime(sessionData.userId, duration);
+      
+      // Increment session counter in daily stats
+      await this.incrementSessionCounter(sessionData.userId);
+    }
+  }
+  
+  private static async incrementSessionCounter(userId: string): Promise<void> {
+    const today = new Date().toISOString().split('T')[0];
+    const statsId = `${userId}_${today}`;
+    const statsRef = doc(db, 'dailyStats', statsId);
+    const statsSnap = await getDoc(statsRef);
+    
+    if (statsSnap.exists()) {
+      const currentData = statsSnap.data();
+      await updateDoc(statsRef, {
+        sessions: currentData.sessions + 1
+      });
+    } else {
+      // If no stats exist yet, create with 1 session
+      await setDoc(statsRef, {
+        userId,
+        date: today,
+        totalWorkTime: 0,
+        sessions: 1,
+        websites: [],
+        goalAchieved: false
+      });
     }
   }
 
@@ -188,9 +215,10 @@ export class DailyStatsService {
       const websites = [...new Set([...currentData.websites, website])];
       
       // Set the total work time to the current value (not add to it)
+      // Don't increment sessions here - that's done in WorkSessionService.endSession
       await updateDoc(statsRef, {
         totalWorkTime: workTime, // Set to current work time, don't add
-        sessions: currentData.sessions + 1,
+        sessions: currentData.sessions, // Keep current session count (no increment on sync)
         websites,
         goalAchieved: goalAchieved
       });
@@ -199,7 +227,7 @@ export class DailyStatsService {
         userId,
         date: today,
         totalWorkTime: workTime,
-        sessions: 1,
+        sessions: 0, // Start at 0 - will increment when first session ends
         websites: [website],
         goalAchieved: goalAchieved
       });

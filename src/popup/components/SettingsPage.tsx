@@ -139,6 +139,7 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
   useEffect(() => {
     const loadDailyGoal = async () => {
       if (auth.currentUser) {
+        // Logged in user - load from Firebase
         try {
           const userData = await UserService.getUserWithStreak(auth.currentUser.uid);
           if (userData) {
@@ -147,6 +148,20 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
         } catch (error) {
           console.error('Error loading daily goal:', error);
         }
+      } else {
+        // Not logged in - load from local storage
+        try {
+          const result = await chrome.storage.local.get(['cachedDailyGoal']);
+          if (result.cachedDailyGoal) {
+            setDailyGoal(result.cachedDailyGoal);
+          } else {
+            // Default to 3 hours if nothing saved
+            setDailyGoal(3);
+          }
+        } catch (error) {
+          console.error('Error loading cached daily goal:', error);
+          setDailyGoal(3); // Fallback to default
+        }
       }
     };
 
@@ -154,18 +169,25 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
   }, []);
 
   const updateDailyGoal = async (newGoal: number) => {
-    if (!auth.currentUser || isSavingGoal) return;
+    if (isSavingGoal) return;
     
     setIsSavingGoal(true);
     try {
-      await UserService.updateUser(auth.currentUser.uid, { dailyGoal: newGoal });
-      setDailyGoal(newGoal);
-      // Cache the goal for instant display on next popup open
-      await chrome.storage.local.set({ cachedDailyGoal: newGoal });
-      alert(`Daily goal updated to ${newGoal} hours!`);
+      if (auth.currentUser) {
+        // Logged in user - save to Firebase AND local storage
+        await UserService.updateUser(auth.currentUser.uid, { dailyGoal: newGoal });
+        await chrome.storage.local.set({ cachedDailyGoal: newGoal });
+        setDailyGoal(newGoal);
+        alert(`✅ Daily goal updated to ${newGoal} hours!`);
+      } else {
+        // Not logged in - save to local storage only
+        await chrome.storage.local.set({ cachedDailyGoal: newGoal });
+        setDailyGoal(newGoal);
+        alert(`✅ Daily goal updated to ${newGoal} hours! (saved locally)`);
+      }
     } catch (error) {
       console.error('Error updating daily goal:', error);
-      alert('Failed to update daily goal');
+      alert('❌ Failed to update daily goal');
     } finally {
       setIsSavingGoal(false);
     }

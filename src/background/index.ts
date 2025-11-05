@@ -9,12 +9,13 @@ interface WorkTrackerData {
   dailyWorkTime: number;
   lastResetDate: string;
   currentSessionId?: string;
+  currentWebsite?: string;
   userId?: string;
 }
 
 class WorkTracker {
   private data: WorkTrackerData = {
-    workSites: ['github.com', 'figma.com', 'notion.so', 'linear.app'],
+    workSites: [], // Start empty - users add their own sites
     currentWorkTime: 0,
     isWorking: false,
     startTime: 0,
@@ -270,21 +271,68 @@ class WorkTracker {
     }
   }
 
-  private startWork() {
+  private async startWork() {
     this.data.isWorking = true;
     this.data.startTime = Date.now();
     this.updateBadge('ON');
+    
+    // Get current website for session tracking
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.url) {
+        const url = new URL(tab.url);
+        this.data.currentWebsite = url.hostname;
+        
+        // Start Firebase work session if user is logged in
+        if (this.data.userId && !this.data.currentSessionId) {
+          try {
+            // Dynamically import Firebase service to avoid blocking background script startup
+            const { WorkSessionService } = await import('../services/firebase');
+            this.data.currentSessionId = await WorkSessionService.startSession(
+              this.data.userId,
+              this.data.currentWebsite
+            );
+            await this.saveData();
+            console.log('🎯 Started Firebase session:', this.data.currentSessionId);
+          } catch (firebaseError) {
+            console.log('Firebase session not started (user may not be logged in):', firebaseError);
+            // Continue tracking locally even if Firebase fails
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error starting work session:', error);
+    }
+    
     console.log('▶️ Started working at', new Date().toLocaleTimeString());
   }
 
-  private stopWork() {
+  private async stopWork() {
     if (this.data.isWorking) {
       const workDuration = Date.now() - this.data.startTime;
       this.data.currentWorkTime += workDuration;
       this.data.dailyWorkTime += workDuration;
       this.data.isWorking = false;
       this.updateBadge('OFF');
-      this.saveData();
+      
+      // End Firebase work session if one exists
+      if (this.data.currentSessionId) {
+        try {
+          // Dynamically import Firebase service
+          const { WorkSessionService } = await import('../services/firebase');
+          await WorkSessionService.endSession(this.data.currentSessionId);
+          console.log('🏁 Ended Firebase session:', this.data.currentSessionId);
+        } catch (error) {
+          console.log('Firebase session not ended (user may not be logged in):', error);
+          // Continue with local tracking
+        } finally {
+          // Always clear session data
+          this.data.currentSessionId = undefined;
+          this.data.currentWebsite = undefined;
+        }
+      }
+      
+      await this.saveData();
       // Sync to Firebase if user is logged in
       this.syncToFirebase();
       console.log('⏹️ Stopped working. Added', 
@@ -307,7 +355,7 @@ class WorkTracker {
 
   private startSuspendDetection() {
     // Check every 5 seconds for time gaps that indicate system suspend
-    this.activityCheckInterval = setInterval(() => {
+    this.activityCheckInterval = setInterval(async () => {
       const now = Date.now();
       const timeSinceLastCheck = now - this.lastActivityTime;
       
@@ -327,9 +375,26 @@ class WorkTracker {
             console.log('✅ Saved', Math.round(workBeforeSleep / 1000), 
               'seconds of work before sleep');
           }
+          
+          // End Firebase session before marking as not working
+          if (this.data.currentSessionId) {
+            try {
+              // Dynamically import Firebase service
+              const { WorkSessionService } = await import('../services/firebase');
+              await WorkSessionService.endSession(this.data.currentSessionId);
+              console.log('🏁 Ended Firebase session due to sleep:', this.data.currentSessionId);
+            } catch (error) {
+              console.log('Firebase session not ended (user may not be logged in):', error);
+            } finally {
+              // Always clear session data
+              this.data.currentSessionId = undefined;
+              this.data.currentWebsite = undefined;
+            }
+          }
+          
           this.data.isWorking = false;
           this.updateBadge('OFF');
-          this.saveData();
+          await this.saveData();
           this.syncToFirebase();
         }
         
