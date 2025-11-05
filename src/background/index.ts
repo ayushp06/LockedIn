@@ -131,6 +131,24 @@ class WorkTracker {
       const result = await chrome.storage.local.get(['workTrackerData']);
       if (result.workTrackerData) {
         this.data = { ...this.data, ...result.workTrackerData };
+        
+        // If we were tracking when Chrome closed, stop tracking to prevent counting closed time
+        if (this.data.isWorking && this.data.startTime) {
+          const timeSinceStart = Date.now() - this.data.startTime;
+          
+          // If more than 1 minute has passed, Chrome was likely closed
+          // Don't count that time - just stop tracking
+          if (timeSinceStart > 60000) {
+            console.log('🛑 Chrome was closed while tracking. Stopping to prevent counting closed time.');
+            console.log('⏱️ Time gap detected:', Math.round(timeSinceStart / 1000), 'seconds');
+            
+            // Stop tracking without adding the gap time
+            this.data.isWorking = false;
+            this.data.currentSessionId = undefined;
+            this.data.currentWebsite = undefined;
+            this.updateBadge('OFF');
+          }
+        }
       }
       await this.saveData();
     } catch (error) {
