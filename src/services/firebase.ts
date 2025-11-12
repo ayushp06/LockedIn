@@ -719,11 +719,31 @@ export class FriendService {
     );
     
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate?.() ?? new Date(),
-    })) as Friend[];
+    const pendingRequests: Friend[] = [];
+    
+    // For each pending request, fetch the sender's user data
+    for (const docSnapshot of querySnapshot.docs) {
+      const data = docSnapshot.data();
+      // The userId field is the person who sent the request (the sender)
+      const senderId = data.userId;
+      
+      // Fetch the sender's user data to get their name and email
+      const senderDoc = await getDoc(doc(db, 'users', senderId));
+      const senderData = senderDoc.data();
+      
+      pendingRequests.push({
+        id: docSnapshot.id,
+        userId: data.userId,
+        friendId: data.friendId,
+        // Use sender's info (the person who sent the request), not the recipient's
+        friendEmail: senderData?.email || data.friendEmail,
+        friendName: senderData?.displayName || data.friendName,
+        status: data.status,
+        createdAt: data.createdAt?.toDate?.() ?? new Date(),
+      });
+    }
+    
+    return pendingRequests;
   }
 
   static async acceptFriendRequest(requestId: string): Promise<void> {

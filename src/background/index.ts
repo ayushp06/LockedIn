@@ -89,7 +89,7 @@ class WorkTracker {
   }
 
   // Register content script for a single site (permission already granted from popup)
-  private async registerContentScriptForSite(site: string): Promise<void> {
+  private async registerContentScriptForSite(site: string, retryCount: number = 0): Promise<void> {
     const scriptId = `lockedin-${site.replace(/\./g, '-')}`;
     const httpsPattern = `https://*.${site}/*`;
     const httpPattern = `http://*.${site}/*`;
@@ -103,9 +103,19 @@ class WorkTracker {
       }
 
       // Verify permission exists (should already be granted from popup)
-      const hasPermission = await chrome.permissions.contains({
+      // Add a small delay and retry if permission check fails (Chrome might need a moment to register)
+      let hasPermission = await chrome.permissions.contains({
         origins: [httpsPattern, httpPattern]
       });
+
+      // Retry once after 100ms if permission check fails (Chrome might need a moment)
+      if (!hasPermission && retryCount === 0) {
+        console.log('⏳ Permission check failed, retrying after short delay...');
+        await new Promise(resolve => setTimeout(resolve, 100));
+        hasPermission = await chrome.permissions.contains({
+          origins: [httpsPattern, httpPattern]
+        });
+      }
 
       if (!hasPermission) {
         throw new Error('Permission not granted for this site');

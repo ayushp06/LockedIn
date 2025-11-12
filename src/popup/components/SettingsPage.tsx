@@ -47,7 +47,56 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
     loadFriends();
   }, []);
 
-  // Load work sites on mount
+  // Helper function to complete site addition after permissions are granted
+  const completeSiteAddition = async (site: string) => {
+    try {
+      console.log('Completing site addition for:', site);
+      
+      // Optimistically add to UI immediately for better UX
+      setWorkSites(prev => {
+        if (!prev.includes(site)) {
+          return [...prev, site];
+        }
+        return prev;
+      });
+      
+      // Small delay to ensure Chrome has registered the permission
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      // Add the site and register content script
+      const response = await chrome.runtime.sendMessage({ 
+        action: 'addWorkSite', 
+        site: site,
+        permissionGranted: true
+      });
+      
+      console.log('Background response:', response);
+      
+      if (response && response.success) {
+        // Reload work sites to get updated list (in case background script has different state)
+        const updatedResponse = await chrome.runtime.sendMessage({ action: 'getWorkSites' });
+        if (updatedResponse && updatedResponse.workSites) {
+          setWorkSites(updatedResponse.workSites);
+        }
+        // Don't show alert - the site appearing in the list is feedback enough
+      } else if (response && response.error) {
+        // Remove from UI if background script failed
+        setWorkSites(prev => prev.filter(s => s !== site));
+        alert(`❌ Error: ${response.error}`);
+      } else {
+        // Remove from UI if unexpected response
+        setWorkSites(prev => prev.filter(s => s !== site));
+        alert('❌ Unexpected response from background script');
+      }
+    } catch (error: any) {
+      console.error('Failed to complete site addition:', error);
+      // Remove from UI on error
+      setWorkSites(prev => prev.filter(s => s !== site));
+      alert(`❌ Failed to add site: ${error.message || 'Unknown error'}`);
+    }
+  };
+
+  // Load work sites on mount and check for pending site additions
   useEffect(() => {
     const loadWorkSites = async () => {
       try {
@@ -57,6 +106,25 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
           
           // Check if we need to request permissions for default sites
           await requestPermissionsForDefaultSites(response.workSites);
+        }
+        
+        // Check if there's a pending site addition (from previous permission request)
+        const pendingSiteData = await chrome.storage.local.get(['pendingSiteAddition']);
+        if (pendingSiteData.pendingSiteAddition) {
+          const { site, patterns } = pendingSiteData.pendingSiteAddition;
+          
+          // Check if permissions are now granted
+          const hasPermission = await chrome.permissions.contains({
+            origins: patterns
+          });
+          
+          if (hasPermission) {
+            // Permissions granted, complete the addition
+            console.log('Completing pending site addition:', site);
+            await completeSiteAddition(site);
+            // Clear pending state
+            await chrome.storage.local.remove(['pendingSiteAddition']);
+          }
         }
       } catch (error) {
         console.error('Failed to load work sites:', error);
@@ -230,44 +298,59 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
     // Use both http and https patterns explicitly
     const httpsPattern = `https://*.${site}/*`;
     const httpPattern = `http://*.${site}/*`;
+    const patterns = [httpsPattern, httpPattern];
     
     try {
+      // First check if permissions are already granted
+      const hasPermission = await chrome.permissions.contains({
+        origins: patterns
+      });
+
+      if (hasPermission) {
+        // Permissions already granted, add immediately
+        console.log('Permissions already granted, adding site immediately');
+        await completeSiteAddition(site);
+        setNewSite('');
+        return;
+      }
+
+      // Permissions not granted, store the site for later completion
+      console.log('Storing pending site addition:', site);
+      await chrome.storage.local.set({
+        pendingSiteAddition: {
+          site: site,
+          patterns: patterns
+        }
+      });
+      
+      // Clear the input field so user knows it's processing
+      setNewSite('');
+      
       console.log('Requesting permissions for:', site);
-      console.log('Patterns:', httpsPattern, httpPattern);
+      console.log('Patterns:', patterns);
       
       // Request permission in popup (requires user interaction)
       const granted = await chrome.permissions.request({
-        origins: [httpsPattern, httpPattern]
+        origins: patterns
       });
 
       console.log('Permission granted:', granted);
 
       if (!granted) {
+        // Permission denied, clear pending state
+        await chrome.storage.local.remove(['pendingSiteAddition']);
         alert('❌ Permission denied. Please allow access to track this site.');
         return;
       }
 
-      // Permission granted, now add the site and register content script
-      console.log('Sending addWorkSite message...');
-      const response = await chrome.runtime.sendMessage({ 
-        action: 'addWorkSite', 
-        site: site,
-        permissionGranted: true
-      });
-      
-      console.log('Background response:', response);
-      
-      if (response && response.success) {
-        setWorkSites([...workSites, site]);
-        setNewSite('');
-        alert(`✅ Added ${site} to tracked sites!`);
-      } else if (response && response.error) {
-        alert(`❌ Error: ${response.error}`);
-      } else {
-        alert('❌ Unexpected response from background script');
-      }
+      // Permission granted, complete the addition immediately
+      // Clear pending state first to avoid duplicate processing
+      await chrome.storage.local.remove(['pendingSiteAddition']);
+      await completeSiteAddition(site);
     } catch (error: any) {
       console.error('Failed to add work site:', error);
+      // Clear pending state on error
+      await chrome.storage.local.remove(['pendingSiteAddition']);
       alert(`❌ Failed to add site: ${error.message || 'Unknown error'}`);
     }
   };
