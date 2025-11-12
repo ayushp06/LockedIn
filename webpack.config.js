@@ -132,8 +132,8 @@ module.exports = {
     ),
     new webpack.BannerPlugin({
       banner: `
-        // Prevent external script loading
-        if (typeof window !== 'undefined') {
+        // Prevent external script loading (only in window context, not service workers)
+        if (typeof window !== 'undefined' && typeof document !== 'undefined') {
           const originalCreateElement = document.createElement;
           document.createElement = function(tagName) {
             const element = originalCreateElement.call(this, tagName);

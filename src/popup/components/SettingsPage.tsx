@@ -33,6 +33,9 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
           // Clean up any duplicate friends first
           await FriendService.cleanupDuplicateFriends(auth.currentUser.uid);
           
+          // Refresh friendship data to ensure correct friendEmail/friendName
+          await FriendService.refreshFriendshipData(auth.currentUser.uid);
+          
           const friendsList = await FriendService.getFriends(auth.currentUser.uid);
           setFriends(friendsList);
           

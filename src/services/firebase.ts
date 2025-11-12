@@ -685,25 +685,51 @@ export class FriendService {
     
     for (const docSnapshot of querySnapshot.docs) {
       const data = docSnapshot.data();
-      const friendId = data.userId === userId ? data.friendId : data.userId;
+      
+      // Determine which user is the friend (the other person, not the current user)
+      // Document structure: userId = owner of this friendship record, friendId = the friend
+      // If userId matches current user, then friendId is the friend
+      // If friendId matches current user, then userId is the friend
+      let friendId: string;
+      if (data.userId === userId) {
+        // Current user owns this record, friend is friendId
+        friendId = data.friendId;
+      } else if (data.friendId === userId) {
+        // Current user is the friend in this record, so the friend is userId
+        friendId = data.userId;
+      } else {
+        // This shouldn't happen, skip
+        console.warn('Unexpected friend document structure:', docSnapshot.id, data);
+        continue;
+      }
+      
+      // Skip if this is the current user (shouldn't happen, but safety check)
+      if (friendId === userId) {
+        console.warn('Skipping friend entry where friendId equals userId:', docSnapshot.id);
+        continue;
+      }
       
       // Only add each friend once
       if (!processedFriends.has(friendId)) {
         processedFriends.add(friendId);
         
-        // Get friend's user data
+        // Get friend's user data (always use fresh data from users collection)
         const friendUserSnap = await getDoc(doc(db, 'users', friendId));
         if (friendUserSnap.exists()) {
           const friendUserData = friendUserSnap.data();
+          
+          // Always use the friend's data (the other person)
           friends.push({
             id: docSnapshot.id,
             userId: data.userId,
             friendId: data.friendId,
-            friendEmail: data.friendEmail || friendUserData.email,
-            friendName: data.friendName || friendUserData.displayName,
+            friendEmail: friendUserData.email, // Always use fresh data from users collection
+            friendName: friendUserData.displayName, // Always use fresh data from users collection
             status: data.status,
             createdAt: data.createdAt?.toDate?.() ?? new Date(),
           });
+        } else {
+          console.warn('Friend user not found:', friendId);
         }
       }
     }
@@ -753,9 +779,30 @@ export class FriendService {
     if (requestSnap.exists()) {
       const requestData = requestSnap.data();
       
-      // Update the request to accepted
-      await updateDoc(requestRef, { status: 'accepted' });
+      // requestData.userId = the person who sent the request (the friend from sender's perspective)
+      // requestData.friendId = the person who accepted the request (current user/recipient)
+      
+      // Get fresh data for both users
+      const senderUserSnap = await getDoc(doc(db, 'users', requestData.userId));
+      const recipientUserSnap = await getDoc(doc(db, 'users', requestData.friendId));
+      
+      if (!senderUserSnap.exists() || !recipientUserSnap.exists()) {
+        throw new Error('User not found');
+      }
+      
+      const senderUserData = senderUserSnap.data();
+      const recipientUserData = recipientUserSnap.data();
+      
+      // Update the original request to accepted
+      // Original document: userId = sender, friendId = recipient
+      // So friendEmail/friendName should be recipient's data (from sender's perspective)
+      await updateDoc(requestRef, { 
+        status: 'accepted',
+        friendEmail: recipientUserData.email, // Recipient's email (the friend from sender's perspective)
+        friendName: recipientUserData.displayName // Recipient's name
+      });
 
+      // Check if reverse friendship already exists
       const existing = await getDocs(
         query(collection(db, 'friends'),
         where('userId', '==', requestData.friendId),
@@ -763,15 +810,14 @@ export class FriendService {
       );
 
       if (existing.empty) {
-        // Get the current user's data for the reverse friendship
-        const currentUserSnap = await getDoc(doc(db, 'users', requestData.friendId));
-        const currentUserData = currentUserSnap.data();
-        
+        // Create reverse friendship document
+        // Reverse document: userId = recipient, friendId = sender
+        // So friendEmail/friendName should be sender's data (from recipient's perspective)
         await addDoc(collection(db, 'friends'), {
-          userId: requestData.friendId,
-          friendId: requestData.userId,
-          friendEmail: currentUserData?.email,
-          friendName: currentUserData?.displayName,
+          userId: requestData.friendId, // Current user (who accepted/recipient)
+          friendId: requestData.userId, // Friend (who sent the request/sender)
+          friendEmail: senderUserData.email, // Sender's email (the friend from recipient's perspective)
+          friendName: senderUserData.displayName, // Sender's name
           status: 'accepted',
           createdAt: serverTimestamp()
         });
@@ -846,6 +892,54 @@ export class FriendService {
     // Delete duplicate entries
     for (const docId of toDelete) {
       await deleteDoc(doc(db, 'friends', docId));
+    }
+  }
+
+  // Fix existing friendship documents to have correct friendEmail/friendName
+  static async refreshFriendshipData(userId: string): Promise<void> {
+    const friendsQuery = query(
+      collection(db, 'friends'),
+      or(
+        where('userId', '==', userId),
+        where('friendId', '==', userId)
+      )
+    );
+    
+    const friendsSnapshot = await getDocs(friendsQuery);
+    
+    for (const docSnapshot of friendsSnapshot.docs) {
+      const data = docSnapshot.data();
+      
+      // Determine which user is the friend (same logic as getFriends)
+      let friendId: string;
+      if (data.userId === userId) {
+        // Current user owns this record, friend is friendId
+        friendId = data.friendId;
+      } else if (data.friendId === userId) {
+        // Current user is the friend in this record, so the friend is userId
+        friendId = data.userId;
+      } else {
+        // Skip invalid documents
+        continue;
+      }
+      
+      // Skip if friendId equals userId (invalid)
+      if (friendId === userId) {
+        continue;
+      }
+      
+      // Get fresh friend data
+      const friendUserSnap = await getDoc(doc(db, 'users', friendId));
+      if (friendUserSnap.exists()) {
+        const friendUserData = friendUserSnap.data();
+        
+        // Update the document with correct friend data
+        // The friendEmail/friendName should always be the friend's data (the other person)
+        await updateDoc(docSnapshot.ref, {
+          friendEmail: friendUserData.email,
+          friendName: friendUserData.displayName
+        });
+      }
     }
   }
 }
